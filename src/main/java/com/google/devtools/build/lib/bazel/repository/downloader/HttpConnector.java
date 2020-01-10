@@ -14,6 +14,7 @@
 
 package com.google.devtools.build.lib.bazel.repository.downloader;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Ascii;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableMap;
@@ -88,12 +89,17 @@ class HttpConnector {
   }
 
   URLConnection connect(
-      URL originalUrl, ImmutableMap<String, String> requestHeaders)
+      final URL originalUrl,
+      final ImmutableMap<String, String> requestHeaders,
+      final ImmutableMap<String, String> additionalHeaders)
           throws IOException {
 
     if (Thread.interrupted()) {
       throw new InterruptedIOException();
     }
+    // The URL can be changed due to redirects,
+    // thus it is extremely important to add sensitive headers like "Authentication"
+    // by matching current URL each time.
     URL url = originalUrl;
     if (HttpUtils.isProtocol(url, "file")) {
       return url.openConnection();
@@ -103,6 +109,11 @@ class HttpConnector {
     int redirects = 0;
     int connectTimeout = scale(MIN_CONNECT_TIMEOUT_MS);
     while (true) {
+      final ImmutableMap<String, String> headers = ImmutableMap.<String, String>builder()
+          .putAll(requestHeaders)
+          .putAll(additionalHeadersForUrl(originalUrl, url, additionalHeaders))
+          .build();
+
       HttpURLConnection connection = null;
       try {
         connection = (HttpURLConnection)
@@ -111,7 +122,8 @@ class HttpConnector {
             COMPRESSED_EXTENSIONS.contains(HttpUtils.getExtension(url.getPath()))
                 || COMPRESSED_EXTENSIONS.contains(HttpUtils.getExtension(originalUrl.getPath()));
         connection.setInstanceFollowRedirects(false);
-        for (Map.Entry<String, String> entry : requestHeaders.entrySet()) {
+
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
           if (isAlreadyCompressed && Ascii.equalsIgnoreCase(entry.getKey(), "Accept-Encoding")) {
             // We're not going to ask for compression if we're downloading a file that already
             // appears to be compressed.
@@ -156,9 +168,6 @@ class HttpConnector {
             throw new UnrecoverableHttpException("Redirect loop detected");
           }
           url = HttpUtils.getLocation(connection);
-          if (code == 301) {
-            originalUrl = url;
-          }
         } else if (code == 403) {
           // jart@ has noticed BitBucket + Amazon AWS downloads frequently flake with this code.
           throw new IOException(describeHttpResponse(connection));
@@ -253,6 +262,21 @@ class HttpConnector {
 
   private String format(String format, Object... args) {
     return String.format(locale, format, args);
+  }
+
+  // Look up additional headers like "Authentication" for an actual URL given the original URL.
+  // Potential source of CVEs so be extra careful!
+  // Never returns null.
+  @VisibleForTesting
+  static ImmutableMap<String, String> additionalHeadersForUrl(
+      URL originalUrl,
+      URL actualUrl,
+      ImmutableMap<String, String> additionalHeaders) {
+    if (originalUrl.getHost() != null && originalUrl.getHost().equalsIgnoreCase(actualUrl.getHost())) {
+      return additionalHeaders;
+    }
+
+    return ImmutableMap.of();
   }
 
   // Exhausts all bytes in an HTTP to make it easier for Java infrastructure to reuse sockets.

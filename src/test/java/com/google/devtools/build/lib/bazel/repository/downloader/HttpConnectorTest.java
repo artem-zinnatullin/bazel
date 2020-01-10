@@ -38,6 +38,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.net.InetAddress;
+import java.net.MalformedURLException;
 import java.net.Proxy;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -106,7 +107,8 @@ public class HttpConnectorTest {
             ByteStreams.toByteArray(
                 connector.connect(
                         createTempFile(fileContents).toURI().toURL(),
-                        ImmutableMap.<String, String>of())
+                        ImmutableMap.<String, String>of(),
+                        ImmutableMap.of())
                     .getInputStream()))
         .isEqualTo(fileContents);
   }
@@ -115,7 +117,7 @@ public class HttpConnectorTest {
   public void badHost_throwsIOException() throws Exception {
     thrown.expect(IOException.class);
     thrown.expectMessage("Unknown host: bad.example");
-    connector.connect(new URL("http://bad.example"), ImmutableMap.<String, String>of());
+    connector.connect(new URL("http://bad.example"), ImmutableMap.<String, String>of(), ImmutableMap.of());
   }
 
   @Test
@@ -147,7 +149,8 @@ public class HttpConnectorTest {
               new InputStreamReader(
                   connector.connect(
                           new URL(String.format("http://localhost:%d/boo", server.getLocalPort())),
-                          ImmutableMap.of("Content-Encoding", "gzip"))
+                          ImmutableMap.of("Content-Encoding", "gzip"),
+                          ImmutableMap.of())
                       .getInputStream(),
                   ISO_8859_1)) {
         assertThat(CharStreams.toString(payload)).isEqualTo("hello");
@@ -198,7 +201,8 @@ public class HttpConnectorTest {
               new InputStreamReader(
                   connector.connect(
                           new URL(String.format("http://localhost:%d", server.getLocalPort())),
-                          ImmutableMap.<String, String>of())
+                          ImmutableMap.<String, String>of(),
+                          ImmutableMap.of())
                       .getInputStream(),
                   ISO_8859_1)) {
         assertThat(CharStreams.toString(payload)).isEqualTo("hello");
@@ -257,7 +261,8 @@ public class HttpConnectorTest {
               connector
                   .connect(
                       new URL(String.format("http://localhost:%d", port)),
-                      ImmutableMap.<String, String>of())
+                      ImmutableMap.<String, String>of(),
+                      ImmutableMap.of())
                   .getInputStream(),
               ISO_8859_1)) {
         assertThat(CharStreams.toString(payload)).isEqualTo("hello");
@@ -316,7 +321,8 @@ public class HttpConnectorTest {
               connector
                   .connect(
                       new URL(String.format("http://localhost:%d", server.getLocalPort())),
-                      ImmutableMap.<String, String>of())
+                      ImmutableMap.<String, String>of(),
+                      ImmutableMap.of())
                   .getInputStream(),
               ISO_8859_1)) {
         assertThat(CharStreams.toString(payload)).isEqualTo("hello");
@@ -349,7 +355,8 @@ public class HttpConnectorTest {
               connector
                   .connect(
                       new URL(String.format("http://localhost:%d", server.getLocalPort())),
-                      ImmutableMap.<String, String>of())
+                      ImmutableMap.<String, String>of(),
+                      ImmutableMap.of())
                   .getInputStream(),
               ISO_8859_1)) {
         fail("Should have thrown");
@@ -388,7 +395,8 @@ public class HttpConnectorTest {
       thrown.expectMessage("404 Not Here");
       connector.connect(
           new URL(String.format("http://localhost:%d", server.getLocalPort())),
-          ImmutableMap.<String, String>of());
+          ImmutableMap.<String, String>of(),
+          ImmutableMap.of());
     }
   }
 
@@ -423,7 +431,8 @@ public class HttpConnectorTest {
               });
       connector.connect(
           new URL(String.format("http://localhost:%d", server.getLocalPort())),
-          ImmutableMap.<String, String>of());
+          ImmutableMap.<String, String>of(),
+          ImmutableMap.of());
       fail();
     } catch (IOException ignored) {
       // ignored
@@ -466,7 +475,8 @@ public class HttpConnectorTest {
       try {
         connector.connect(
             new URL(String.format("http://localhost:%d", server.getLocalPort())),
-            ImmutableMap.<String, String>of());
+            ImmutableMap.<String, String>of(),
+            ImmutableMap.of());
       } finally {
         assertThat(tries.get()).isGreaterThan(2);
       }
@@ -505,11 +515,73 @@ public class HttpConnectorTest {
       try {
         connector.connect(
             new URL(String.format("http://localhost:%d", server.getLocalPort())),
-            ImmutableMap.<String, String>of());
+            ImmutableMap.<String, String>of(),
+            ImmutableMap.of());
       } finally {
         assertThat(tries.get()).isGreaterThan(2);
       }
     }
+  }
+
+  @Test
+  public void additionalHeadersForUrl_matchesIfOriginalUrlEqualsToActual()
+      throws MalformedURLException {
+    URL originalUrl = new URL("https://localhost/some_path");
+    URL actualUrl = new URL("https://localhost/some_path");
+    ImmutableMap<String, String> additionalHeaders = ImmutableMap.of("SomeKey", "SomeValue");
+
+    assertThat(HttpConnector.additionalHeadersForUrl(originalUrl, actualUrl, additionalHeaders)).isEqualTo(additionalHeaders);
+  }
+
+  @Test
+  public void additionalHeadersForUrl_matchesIfActualSchemaAndHostIsSameAsOriginalButPathIsDifferent()
+      throws MalformedURLException {
+    URL originalUrl = new URL("https://localhost/some_path");
+    URL actualUrl = new URL("https://localhost/some_other_path");
+    ImmutableMap<String, String> additionalHeaders = ImmutableMap.of("SomeKey", "SomeValue");
+
+    assertThat(HttpConnector.additionalHeadersForUrl(originalUrl, actualUrl, additionalHeaders)).isEqualTo(additionalHeaders);
+  }
+
+  @Test
+  public void additionalHeadersForUrl_matchesIfActualSchemaIsDifferentButHostAndPathAreSameAsOriginal()
+      throws MalformedURLException {
+    // Testing common cast of HTTP -> HTTPS redirect.
+    URL originalUrl = new URL("http://localhost/some_path");
+    URL actualUrl = new URL("https://localhost/some_path");
+    ImmutableMap<String, String> additionalHeaders = ImmutableMap.of("SomeKey", "SomeValue");
+
+    assertThat(HttpConnector.additionalHeadersForUrl(originalUrl, actualUrl, additionalHeaders)).isEqualTo(additionalHeaders);
+  }
+
+  @Test
+  public void additionalHeadersForUrl_matchesIfActualSchemaAndPathAreDifferentButHostIsSameAsOriginal()
+      throws MalformedURLException {
+    URL originalUrl = new URL("http://localhost/some_path");
+    URL actualUrl = new URL("https://localhost/some_other_path");
+    ImmutableMap<String, String> additionalHeaders = ImmutableMap.of("SomeKey", "SomeValue");
+
+    assertThat(HttpConnector.additionalHeadersForUrl(originalUrl, actualUrl, additionalHeaders)).isEqualTo(additionalHeaders);
+  }
+
+  @Test
+  public void additionalHeadersForUrl_matchesIfActualSchemaPathAndPortAreDifferentButHostIsSameAsOriginal()
+      throws MalformedURLException {
+    URL originalUrl = new URL("http://localhost/some_path");
+    URL actualUrl = new URL("https://localhost:8081/some_other_path");
+    ImmutableMap<String, String> additionalHeaders = ImmutableMap.of("SomeKey", "SomeValue");
+
+    assertThat(HttpConnector.additionalHeadersForUrl(originalUrl, actualUrl, additionalHeaders)).isEqualTo(additionalHeaders);
+  }
+
+  @Test
+  public void additionalHeadersForUrl_doesNotMatchIfHostIsDifferent()
+      throws MalformedURLException {
+    URL originalUrl = new URL("http://localhost/some_path");
+    URL actualUrl = new URL("https://otherhost/some_path");
+    ImmutableMap<String, String> additionalHeaders = ImmutableMap.of("SomeKey", "SomeValue");
+
+    assertThat(HttpConnector.additionalHeadersForUrl(originalUrl, actualUrl, additionalHeaders)).isEqualTo(ImmutableMap.of());
   }
 
   @Test
@@ -519,7 +591,12 @@ public class HttpConnectorTest {
 
   @Test
   public void serverRedirect_301() throws Exception {
-    redirectToDifferentServer_works("301");
+    redirectToDifferentServer_works("301", ImmutableMap.of());
+  }
+
+  @Test
+  public void serverRedirect_301_doesntPassHeaders() throws Exception {
+    redirectToDifferentServer_works("301", ImmutableMap.of("Authentication", "Very Secret Value"));
   }
 
   /*
@@ -532,7 +609,7 @@ public class HttpConnectorTest {
 
   @Test
   public void serverRedirects_303() throws Exception {
-    redirectToDifferentServer_works("303");
+    redirectToDifferentServer_works("303", ImmutableMap.of());
   }
 
   public void redirectToDifferentPath_works(String code) throws Exception {
@@ -576,7 +653,8 @@ public class HttpConnectorTest {
       URLConnection connection =
           connector.connect(
               new URL(String.format("http://localhost:%d", server.getLocalPort())),
-              ImmutableMap.<String, String>of());
+              ImmutableMap.<String, String>of(),
+              ImmutableMap.of());
       assertThat(connection.getURL()).isEqualTo(
           new URL(String.format("http://localhost:%d/doodle.tar.gz", server.getLocalPort())));
       try (InputStream input = connection.getInputStream()) {
@@ -587,8 +665,10 @@ public class HttpConnectorTest {
     assertThat(headers2).containsEntry("x-request-uri", "/doodle.tar.gz");
   }
 
-  public void redirectToDifferentServer_works(String code) throws Exception {
+  public void redirectToDifferentServer_works(String code, ImmutableMap<String, String> additionalHeaders) throws Exception {
     String redirectCode = "HTTP/1.1 " + code + " Redirect";
+    final Map<String, String> headers1 = new ConcurrentHashMap<>();
+    final Map<String, String> headers2 = new ConcurrentHashMap<>();
     try (ServerSocket server1 = new ServerSocket(0, 1, InetAddress.getByName(null));
         ServerSocket server2 = new ServerSocket(0, 1, InetAddress.getByName(null))) {
       @SuppressWarnings("unused")
@@ -598,7 +678,7 @@ public class HttpConnectorTest {
                 @Override
                 public Object call() throws Exception {
                   try (Socket socket = server1.accept()) {
-                    readHttpRequest(socket.getInputStream());
+                    readHttpRequest(socket.getInputStream(), headers1);
                     sendLines(
                         socket,
                         redirectCode,
@@ -620,7 +700,7 @@ public class HttpConnectorTest {
                 @Override
                 public Object call() throws Exception {
                   try (Socket socket = server2.accept()) {
-                    readHttpRequest(socket.getInputStream());
+                    readHttpRequest(socket.getInputStream(), headers2);
                     sendLines(
                         socket,
                         "HTTP/1.1 200 OK",
@@ -637,9 +717,17 @@ public class HttpConnectorTest {
       URLConnection connection =
           connector.connect(
               new URL(String.format("http://localhost:%d", server1.getLocalPort())),
-              ImmutableMap.<String, String>of());
+              ImmutableMap.<String, String>of(),
+              additionalHeaders);
       assertThat(connection.getURL()).isEqualTo(
           new URL(String.format("http://localhost:%d/doodle.tar.gz", server2.getLocalPort())));
+
+      for (Map.Entry<String, String> additionalHeader: additionalHeaders.entrySet()) {
+        // Verify that additional headers are not passed to a different server.
+        assertThat(headers1).doesNotContainKey(additionalHeader.getKey());
+        assertThat(headers2).doesNotContainKey(additionalHeader.getKey());
+      }
+
       try (InputStream input = connection.getInputStream()) {
         assertThat(ByteStreams.toByteArray(input)).isEqualTo("hello".getBytes(US_ASCII));
       }

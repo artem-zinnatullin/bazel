@@ -97,9 +97,9 @@ public class HttpConnectorMultiplexerTest {
 
   @Before
   public void before() throws Exception {
-    when(connector.connect(eq(URL1), any(ImmutableMap.class))).thenReturn(connection1);
-    when(connector.connect(eq(URL2), any(ImmutableMap.class))).thenReturn(connection2);
-    when(connector.connect(eq(URL3), any(ImmutableMap.class))).thenReturn(connection3);
+    when(connector.connect(eq(URL1), any(ImmutableMap.class), any(ImmutableMap.class))).thenReturn(connection1);
+    when(connector.connect(eq(URL2), any(ImmutableMap.class), any(ImmutableMap.class))).thenReturn(connection2);
+    when(connector.connect(eq(URL3), any(ImmutableMap.class), any(ImmutableMap.class))).thenReturn(connection3);
     when(streamFactory.create(
             same(connection1), any(URL.class), any(Optional.class), any(Reconnector.class)))
         .thenReturn(stream1);
@@ -151,7 +151,7 @@ public class HttpConnectorMultiplexerTest {
   @Test
   public void singleUrl_justCallsConnector() throws Exception {
     assertThat(toByteArray(multiplexer.connect(asList(URL1), DUMMY_CHECKSUM))).isEqualTo(data1);
-    verify(connector).connect(eq(URL1), any(ImmutableMap.class));
+    verify(connector).connect(eq(URL1), any(ImmutableMap.class), any(ImmutableMap.class));
     verify(streamFactory)
         .create(
             any(URLConnection.class), any(URL.class), eq(DUMMY_CHECKSUM), any(Reconnector.class));
@@ -160,11 +160,11 @@ public class HttpConnectorMultiplexerTest {
 
   @Test
   public void multipleUrlsFail_throwsIOException() throws Exception {
-    when(connector.connect(any(URL.class), any(ImmutableMap.class))).thenThrow(new IOException());
+    when(connector.connect(any(URL.class), any(ImmutableMap.class), any(ImmutableMap.class))).thenThrow(new IOException());
     IOException e =
         assertThrows(IOException.class, () -> multiplexer.connect(asList(URL1, URL2, URL3), null));
     assertThat(e).hasMessageThat().contains("All mirrors are down");
-    verify(connector, times(3)).connect(any(URL.class), any(ImmutableMap.class));
+    verify(connector, times(3)).connect(any(URL.class), any(ImmutableMap.class), any(ImmutableMap.class));
     verify(sleeper, times(2)).sleepMillis(anyLong());
     verifyNoMoreInteractions(sleeper, connector, streamFactory);
   }
@@ -179,12 +179,12 @@ public class HttpConnectorMultiplexerTest {
             return null;
           }
         }).when(sleeper).sleepMillis(anyLong());
-    when(connector.connect(eq(URL1), any(ImmutableMap.class))).thenThrow(new IOException());
+    when(connector.connect(eq(URL1), any(ImmutableMap.class), any(ImmutableMap.class))).thenThrow(new IOException());
     assertThat(toByteArray(multiplexer.connect(asList(URL1, URL2), DUMMY_CHECKSUM)))
         .isEqualTo(data2);
     assertThat(clock.currentTimeMillis()).isEqualTo(1000L);
-    verify(connector).connect(eq(URL1), any(ImmutableMap.class));
-    verify(connector).connect(eq(URL2), any(ImmutableMap.class));
+    verify(connector).connect(eq(URL1), any(ImmutableMap.class), any(ImmutableMap.class));
+    verify(connector).connect(eq(URL2), any(ImmutableMap.class), any(ImmutableMap.class));
     verify(streamFactory)
         .create(
             any(URLConnection.class), any(URL.class), eq(DUMMY_CHECKSUM), any(Reconnector.class));
@@ -196,7 +196,7 @@ public class HttpConnectorMultiplexerTest {
   public void twoSuccessfulUrlsAndFirstWins_returnsFirstAndInterruptsSecond() throws Exception {
     final CyclicBarrier barrier = new CyclicBarrier(2);
     final AtomicBoolean wasInterrupted = new AtomicBoolean(true);
-    when(connector.connect(eq(URL1), any(ImmutableMap.class))).thenAnswer(
+    when(connector.connect(eq(URL1), any(ImmutableMap.class), any(ImmutableMap.class))).thenAnswer(
         new Answer<URLConnection>() {
           @Override
           public URLConnection answer(InvocationOnMock invocation) throws Throwable {
@@ -225,7 +225,7 @@ public class HttpConnectorMultiplexerTest {
     final AtomicBoolean wasInterrupted1 = new AtomicBoolean(true);
     final AtomicBoolean wasInterrupted2 = new AtomicBoolean(true);
     final AtomicBoolean wasInterrupted3 = new AtomicBoolean(true);
-    when(connector.connect(eq(URL1), any(ImmutableMap.class))).thenAnswer(
+    when(connector.connect(eq(URL1), any(ImmutableMap.class), any(ImmutableMap.class))).thenAnswer(
         new Answer<URLConnection>() {
           @Override
           public URLConnection answer(InvocationOnMock invocation) throws Throwable {
@@ -235,7 +235,7 @@ public class HttpConnectorMultiplexerTest {
             throw new RuntimeException();
           }
         });
-    when(connector.connect(eq(URL2), any(ImmutableMap.class))).thenAnswer(
+    when(connector.connect(eq(URL2), any(ImmutableMap.class), any(ImmutableMap.class))).thenAnswer(
         new Answer<URLConnection>() {
           @Override
           public URLConnection answer(InvocationOnMock invocation) throws Throwable {

@@ -313,21 +313,19 @@ final class HttpConnectorMultiplexer {
   private HttpStream establishConnection(
       final URL url, Optional<Checksum> checksum, Map<URI, Map<String, String>> additionalHeaders)
       throws IOException {
-    ImmutableMap<String, String> headers = REQUEST_HEADERS;
+    ImmutableMap<String, String> actualAdditionalHeaders = ImmutableMap.of();
     try {
       if (additionalHeaders.containsKey(url.toURI())) {
-        headers =
-            ImmutableMap.<String, String>builder()
-                .putAll(headers)
-                .putAll(additionalHeaders.get(url.toURI()))
-                .build();
+        actualAdditionalHeaders = ImmutableMap.copyOf(additionalHeaders.get(url.toURI()));
       }
     } catch (URISyntaxException e) {
       // If we can't convert the URL to a URI (because it is syntactically malformed), still try to
       // do the connection, not adding authentication information as we cannot look it up.
+      actualAdditionalHeaders = ImmutableMap.of();
     }
-    final URLConnection connection = connector.connect(url, headers);
-    final Map<String, String> allHeaders = headers;
+
+    final ImmutableMap<String, String> finalActualAdditionalHeaders = actualAdditionalHeaders;
+    final URLConnection connection = connector.connect(url, REQUEST_HEADERS, actualAdditionalHeaders);
     return httpStreamFactory.create(
         connection,
         url,
@@ -341,9 +339,10 @@ final class HttpConnectorMultiplexer {
             return connector.connect(
                 connection.getURL(),
                 new ImmutableMap.Builder<String, String>()
-                    .putAll(allHeaders)
+                    .putAll(REQUEST_HEADERS)
                     .putAll(extraHeaders)
-                    .build());
+                    .build(),
+                finalActualAdditionalHeaders);
           }
         });
   }
