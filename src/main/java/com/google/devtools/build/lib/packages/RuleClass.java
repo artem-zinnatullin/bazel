@@ -2341,7 +2341,7 @@ public class RuleClass {
     Set<Label> duplicates = AggregatingAttributeMapper.of(rule).checkForDuplicateLabels(attribute);
     for (Label label : duplicates) {
       rule.reportError(
-          String.format("Label '%s' is duplicated in the '%s' attribute of rule '%s'",
+          String.format("Label '%s' is duplicated in the '%s' attribute of rule '%s', i.e. same label in deps and exported_deps",
           label, attribute.getName(), rule.getName()), eventHandler);
     }
   }
